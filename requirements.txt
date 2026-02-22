@@ -1,0 +1,15 @@
+streamlit
+requests
+python-dotenv
+transformers
+bitsandbytes
+accelerate
+torch
+faiss-cpu
+sentence-transformers
+pydantic
+python-dotenv
+PyPDF2
+python-docx
+pandas
+huggingface_hub
