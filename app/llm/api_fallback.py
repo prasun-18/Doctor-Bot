@@ -7,7 +7,7 @@ load_dotenv()
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 MODEL_NAME = "google/medgemma-4b-pt"
 
-# ✅ NEW ROUTER ENDPOINT
+#NEW ROUTER ENDPOINT
 API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_NAME}"
 
 headers = {

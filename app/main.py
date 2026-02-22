@@ -89,13 +89,13 @@ if user_input:
 
         if structured_report:
 
-            # 🔥 NEW: Risk Assessment
+            #NEW: Risk Assessment
             risk_result = assess_risk(structured_report)
 
-            st.subheader("📊 Structured Medical Data")
+            st.subheader("Structured Medical Data")
             st.json(structured_report.dict())
 
-            st.subheader("⚠ Risk Assessment")
+            st.subheader("Risk Assessment")
 
             if risk_result["risk_level"] == "HIGH":
                 st.error("HIGH RISK — Immediate medical consultation advised.")
@@ -134,10 +134,10 @@ if user_input:
         diagnosis = parse_diagnosis_output(raw_response)
 
         if diagnosis:
-            st.subheader("🩺 Primary Suspected Condition")
+            st.subheader("Primary Suspected Condition")
             st.info(diagnosis.primary_suspected_condition)
 
-            st.subheader("📋 Differential Diagnosis")
+            st.subheader("Differential Diagnosis")
 
             for item in diagnosis.differential_diagnosis:
                 st.write(f"### {item.condition}")
@@ -145,7 +145,7 @@ if user_input:
                 st.write(f"Reason: {item.reason}")
                 st.write("---")
 
-            st.subheader("🧪 Recommended Tests")
+            st.subheader("Recommended Tests")
             for test in diagnosis.recommended_tests:
                 st.write(f"- {test}")
 
