@@ -13,12 +13,12 @@ from engines.diagnosis_engine import (
     parse_diagnosis_output
 )
 
-
 st.set_page_config(page_title="Medical RAG Assistant", layout="wide")
-
 st.title("🏥 Medical RAG Assistant")
 
+# ===============================
 # Initialize session state
+# ===============================
 if "vector_store" not in st.session_state:
     st.session_state.vector_store = None
 
@@ -31,7 +31,9 @@ if "llm" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+# ===============================
 # Sidebar Upload
+# ===============================
 st.sidebar.header("Upload Medical Document")
 uploaded_file = st.sidebar.file_uploader(
     "Supported: PDF, DOCX, CSV, TXT",
@@ -39,28 +41,39 @@ uploaded_file = st.sidebar.file_uploader(
 )
 
 if uploaded_file:
-    with st.spinner("Processing document..."):
-        raw_text = load_document(uploaded_file)
-        chunks = chunk_text(raw_text)
 
-        embeddings = st.session_state.embedder.encode(chunks)
-        dim = len(embeddings[0])
+    if uploaded_file.size == 0:
+        st.sidebar.error("Uploaded file is empty.")
+        st.stop()
 
-        #vector_store = VectorStore(dim)
-        if st.session_state.vector_store is None:
-            st.session_state.vector_store = VectorStore(dim)
+    try:
+        with st.spinner("Processing document..."):
 
-        vector_store = st.session_state.vector_store
-        vector_store.add(embeddings, chunks)
+            raw_text = load_document(uploaded_file)
 
-        st.session_state.vector_store = vector_store
+            if not raw_text or len(raw_text.strip()) < 20:
+                st.sidebar.error("File unreadable or insufficient text.")
+                st.stop()
 
-    st.sidebar.success("Document indexed successfully!")
+            chunks = chunk_text(raw_text)
+            embeddings = st.session_state.embedder.encode(tuple(chunks))
+            dim = len(embeddings[0])
 
+            if st.session_state.vector_store is None:
+                st.session_state.vector_store = VectorStore(dim)
 
+            st.session_state.vector_store.add(embeddings, chunks)
+
+        st.sidebar.success("Document indexed successfully!")
+
+    except Exception as e:
+        st.sidebar.error("Failed to process document.")
+        st.sidebar.text(str(e))
+
+# ===============================
 # Chat Interface
+# ===============================
 st.subheader("Medical Assistant Chat")
-
 user_input = st.chat_input("Ask a medical question...")
 
 if user_input:
@@ -68,10 +81,14 @@ if user_input:
     st.session_state.chat_history.append(("user", user_input))
     st.chat_message("user").write(user_input)
 
-    # ===============================
-    #  STRUCTURED EXTRACTION MODE 
-    # ===============================
+    # ==================================================
+    # STRUCTURED EXTRACTION MODE
+    # ==================================================
     if "extract structured" in user_input.lower():
+
+        if not st.session_state.vector_store:
+            st.warning("Please upload a medical document for structured extraction.")
+            st.stop()
 
         retriever = Retriever(
             st.session_state.embedder,
@@ -79,23 +96,25 @@ if user_input:
         )
 
         retrieved_chunks = retriever.retrieve(user_input)
-
         prompt = build_structuring_prompt(retrieved_chunks)
 
-        with st.spinner("Extracting structured medical data..."):
-            raw_response = st.session_state.llm.generate(prompt)
+        try:
+            with st.spinner("Extracting structured medical data..."):
+                raw_response = st.session_state.llm.generate(prompt)
+        except Exception:
+            st.error("LLM failed to generate response.")
+            st.stop()
 
         structured_report = parse_structured_output(raw_response)
 
         if structured_report:
 
-            #NEW: Risk Assessment
             risk_result = assess_risk(structured_report)
 
-            st.subheader("Structured Medical Data")
+            st.subheader("📊 Structured Medical Data")
             st.json(structured_report.dict())
 
-            st.subheader("Risk Assessment")
+            st.subheader("⚠ Risk Assessment")
 
             if risk_result["risk_level"] == "HIGH":
                 st.error("HIGH RISK — Immediate medical consultation advised.")
@@ -112,40 +131,45 @@ if user_input:
             st.error("Failed to parse structured data.")
 
         st.stop()
-    
-    
-    # ===============================
-    # Diagnosis Mode Block
-    # ===============================
+
+    # ==================================================
+    # DIAGNOSIS MODE (Works WITH or WITHOUT document)
+    # ==================================================
     if "diagnose" in user_input.lower():
 
-        retriever = Retriever(
-            st.session_state.embedder,
-            st.session_state.vector_store
-        )
+        if st.session_state.vector_store:
+            retriever = Retriever(
+                st.session_state.embedder,
+                st.session_state.vector_store
+            )
+            retrieved_chunks = retriever.retrieve(user_input)
+            context = "\n".join(retrieved_chunks)
+        else:
+            context = "No medical document provided. Use general medical reasoning."
 
-        retrieved_chunks = retriever.retrieve(user_input)
+        prompt = build_diagnosis_prompt(context, user_input)
 
-        prompt = build_diagnosis_prompt(retrieved_chunks, user_input)
-
-        with st.spinner("Generating differential diagnosis..."):
-            raw_response = st.session_state.llm.generate(prompt)
+        try:
+            with st.spinner("Generating differential diagnosis..."):
+                raw_response = st.session_state.llm.generate(prompt)
+        except Exception:
+            st.error("LLM failed to generate diagnosis.")
+            st.stop()
 
         diagnosis = parse_diagnosis_output(raw_response)
 
         if diagnosis:
-            st.subheader("Primary Suspected Condition")
+            st.subheader("🩺 Primary Suspected Condition")
             st.info(diagnosis.primary_suspected_condition)
 
-            st.subheader("Differential Diagnosis")
-
+            st.subheader("📋 Differential Diagnosis")
             for item in diagnosis.differential_diagnosis:
                 st.write(f"### {item.condition}")
                 st.write(f"Likelihood: {item.likelihood}")
                 st.write(f"Reason: {item.reason}")
                 st.write("---")
 
-            st.subheader("Recommended Tests")
+            st.subheader("🧪 Recommended Tests")
             for test in diagnosis.recommended_tests:
                 st.write(f"- {test}")
 
@@ -153,11 +177,10 @@ if user_input:
             st.error("Failed to generate structured diagnosis.")
 
         st.stop()
-    
-    
-    # =============================== 
-    #  NORMAL RAG CHAT MODE
-    # ===============================
+
+    # ==================================================
+    # NORMAL CHAT MODE (RAG or General Medical)
+    # ==================================================
     if st.session_state.vector_store:
 
         retriever = Retriever(
@@ -167,9 +190,7 @@ if user_input:
 
         retrieved_chunks = retriever.retrieve(user_input)
 
-        # prompt = build_rag_prompt(retrieved_chunks, user_input)
-        
-        # Inject last 5 chat messages
+        # Inject conversation memory
         history_context = ""
         for role, msg in st.session_state.chat_history[-5:]:
             history_context += f"{role.upper()}: {msg}\n"
@@ -181,16 +202,28 @@ if user_input:
 
     else:
         prompt = f"""
-                        You are a medical AI assistant.
+You are a medical AI assistant.
 
-                        User Question:
-                        {user_input}
+The user has NOT uploaded any medical document.
 
-                        Provide safe medical information and add disclaimer.
-                  """
+Answer using general medical knowledge.
 
-    with st.spinner("Generating response..."):
-        response = st.session_state.llm.generate(prompt)
+User Question:
+{user_input}
+
+Rules:
+- Provide educational information only.
+- Do not give final diagnosis.
+- If symptoms seem severe, advise emergency care.
+- Add disclaimer recommending consultation with a doctor.
+"""
+
+    try:
+        with st.spinner("Generating response..."):
+            response = st.session_state.llm.generate(prompt)
+    except Exception:
+        st.error("LLM failed to generate response.")
+        st.stop()
 
     st.session_state.chat_history.append(("assistant", response))
     st.chat_message("assistant").write(response)
